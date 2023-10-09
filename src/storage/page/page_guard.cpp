@@ -3,7 +3,12 @@
 
 namespace bustub {
 
-BasicPageGuard::BasicPageGuard(BasicPageGuard &&that) noexcept {}
+BasicPageGuard::BasicPageGuard(BasicPageGuard &&that) noexcept
+    : bpm_(that.bpm_), page_(that.page_), is_dirty_(that.is_dirty_) {
+  that.bpm_ = nullptr;
+  that.page_ = nullptr;
+  that.is_dirty_ = false;
+}
 
 void BasicPageGuard::Drop() {
   if (bpm_ != nullptr) {

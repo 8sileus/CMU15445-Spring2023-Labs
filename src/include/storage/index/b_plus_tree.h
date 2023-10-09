@@ -40,20 +40,11 @@ struct PrintableBPlusTree;
  */
 class Context {
  public:
-  // When you insert into / remove from the B+ tree, store the write guard of header page here.
-  // Remember to drop the header page guard and set it to nullopt when you want to unlock all.
   std::optional<WritePageGuard> header_page_{std::nullopt};
-
-  // Save the root page id here so that it's easier to know if the current page is the root page.
   page_id_t root_page_id_{INVALID_PAGE_ID};
-
-  // Store the write guards of the pages that you're modifying here.
   std::deque<WritePageGuard> write_set_;
-
-  // You may want to use this when getting value, but not necessary.
-  std::deque<ReadPageGuard> read_set_;
-
-  auto IsRootPage(page_id_t page_id) -> bool { return page_id == root_page_id_; }
+  std::deque<page_id_t> prev_page_id_;
+  std::deque<page_id_t> next_page_id_;
 };
 
 #define BPLUSTREE_TYPE BPlusTree<KeyType, ValueType, KeyComparator>
@@ -117,6 +108,18 @@ class BPlusTree {
   void RemoveFromFile(const std::string &file_name, Transaction *txn = nullptr);
 
  private:
+  auto FetchHeaderPageWrite(Context &ctx) -> bool;
+
+  auto InsertInLeaf(Context &ctx, const KeyType &key, const ValueType &value) -> bool;
+
+  void InsertInParent(Context &ctx, KeyType key, page_id_t left_value, page_id_t right_value);
+
+  void RemoveInLeaf(Context &ctx, const KeyType &key);
+
+  void RemoveInParent(Context &ctx, KeyType key);
+
+  void UpdateInternalPage(Context &ctx, const KeyType &old_key, const KeyType &new_key);
+
   /* Debug Routines for FREE!! */
   void ToGraph(page_id_t page_id, const BPlusTreePage *page, std::ofstream &out);
 

@@ -19,7 +19,7 @@ namespace bustub {
 
 #define B_PLUS_TREE_INTERNAL_PAGE_TYPE BPlusTreeInternalPage<KeyType, ValueType, KeyComparator>
 #define INTERNAL_PAGE_HEADER_SIZE 12
-#define INTERNAL_PAGE_SIZE ((BUSTUB_PAGE_SIZE - INTERNAL_PAGE_HEADER_SIZE) / (sizeof(MappingType)))
+#define INTERNAL_PAGE_SIZE (((BUSTUB_PAGE_SIZE - INTERNAL_PAGE_HEADER_SIZE) / sizeof(MappingType)) - 1)
 /**
  * Store n indexed keys and n+1 child pointers (page_id) within internal page.
  * Pointer PAGE_ID(i) points to a subtree in which all keys K satisfy:
@@ -40,38 +40,29 @@ class BPlusTreeInternalPage : public BPlusTreePage {
   BPlusTreeInternalPage() = delete;
   BPlusTreeInternalPage(const BPlusTreeInternalPage &other) = delete;
 
-  /**
-   * Writes the necessary header information to a newly created page, must be called after
-   * the creation of a new page to make a valid BPlusTreeInternalPage
-   * @param max_size Maximal size of the page
-   */
-  void Init(int max_size = INTERNAL_PAGE_SIZE);
+  void Init(int max_size = INTERNAL_PAGE_SIZE) {
+    SetMaxSize(max_size);
+    SetSize(0);
+    SetPageType(IndexPageType::INTERNAL_PAGE);
+  }
 
-  /**
-   * @param index The index of the key to get. Index must be non-zero.
-   * @return Key at index
-   */
-  auto KeyAt(int index) const -> KeyType;
+  auto KeyAt(int index) const -> KeyType { return array_[index].first; }
+  auto ValueAt(int index) const -> ValueType { return array_[index].second; }
+  auto GetIndexByKey(const KeyType &key, const KeyComparator &comparator) const -> int;
+  auto GetValueByKey(const KeyType &key, const KeyComparator &comparator) const -> ValueType;
 
-  /**
-   *
-   * @param index The index of the key to set. Index must be non-zero.
-   * @param key The new value for key
-   */
-  void SetKeyAt(int index, const KeyType &key);
+  void Insert(const KeyType &key, const ValueType &left_value, const ValueType &right_value,
+              const KeyComparator &comparator);
+  void Update(const KeyType &old_key, const KeyType &new_key, const KeyComparator &comparator);
+  void Delete(const KeyType &key, const KeyComparator &comparator);
 
-  /**
-   *
-   * @param value the value to search for
-   */
-  auto ValueIndex(const ValueType &value) const -> int;
+  auto Split(BufferPoolManager *bpm) -> std::pair<KeyType, ValueType>;
+  auto SplitToPrev(BufferPoolManager *bpm, page_id_t prev_page_id) -> std::optional<std::pair<KeyType, KeyType>>;
+  auto SplitToNext(BufferPoolManager *bpm, page_id_t next_page_id) -> std::optional<std::pair<KeyType, KeyType>>;
 
-  /**
-   *
-   * @param index the index
-   * @return the value at the index
-   */
-  auto ValueAt(int index) const -> ValueType;
+  auto Merge(BufferPoolManager *bpm, page_id_t prev_page_id, page_id_t next_page_id) -> KeyType;
+  auto FetchFromPrev(BufferPoolManager *bpm, page_id_t prev_page_id) -> std::optional<std::pair<KeyType, KeyType>>;
+  auto FetchFromNext(BufferPoolManager *bpm, page_id_t next_page_id) -> std::optional<std::pair<KeyType, KeyType>>;
 
   /**
    * @brief For test only, return a string representing all keys in

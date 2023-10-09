@@ -20,7 +20,7 @@ namespace bustub {
 
 #define B_PLUS_TREE_LEAF_PAGE_TYPE BPlusTreeLeafPage<KeyType, ValueType, KeyComparator>
 #define LEAF_PAGE_HEADER_SIZE 16
-#define LEAF_PAGE_SIZE ((BUSTUB_PAGE_SIZE - LEAF_PAGE_HEADER_SIZE) / sizeof(MappingType))
+#define LEAF_PAGE_SIZE (((BUSTUB_PAGE_SIZE - LEAF_PAGE_HEADER_SIZE) / sizeof(MappingType)) - 1)
 
 /**
  * Store indexed key and record id(record id = page id combined with slot id,
@@ -52,12 +52,32 @@ class BPlusTreeLeafPage : public BPlusTreePage {
    * method to set default values
    * @param max_size Max size of the leaf node
    */
-  void Init(int max_size = LEAF_PAGE_SIZE);
+  void Init(int max_size = LEAF_PAGE_SIZE) {
+    SetMaxSize(max_size);
+    SetSize(0);
+    SetPageType(IndexPageType::LEAF_PAGE);
+    SetNextPageId(INVALID_PAGE_ID);
+  }
 
   // helper methods
-  auto GetNextPageId() const -> page_id_t;
-  void SetNextPageId(page_id_t next_page_id);
-  auto KeyAt(int index) const -> KeyType;
+  auto GetNextPageId() const -> page_id_t { return next_page_id_; }
+  void SetNextPageId(page_id_t next_page_id) { next_page_id_ = next_page_id; }
+  auto KeyAt(int index) const -> KeyType { return array_[index].first; }
+  auto ValueAt(int index) const -> ValueType { return array_[index].second; }
+  auto PairAt(int index) const -> const MappingType & { return array_[index]; }
+  auto GetIndexByKey(const KeyType &key, const KeyComparator &comparator) const -> int;
+  auto GetValueByKey(const KeyType &key, const KeyComparator &comparator) const -> std::optional<ValueType>;
+
+  auto Insert(const KeyType &key, const ValueType &value, const KeyComparator &comparator) -> bool;
+  auto Delete(const KeyType &key, const KeyComparator &comparator) -> bool;
+
+  auto Split(BufferPoolManager *bpm) -> std::pair<KeyType, page_id_t>;
+  auto SplitToPrev(BufferPoolManager *bpm, page_id_t prev_page_id) -> std::optional<std::pair<KeyType, KeyType>>;
+  auto SplitToNext(BufferPoolManager *bpm, page_id_t next_page_id) -> std::optional<std::pair<KeyType, KeyType>>;
+
+  auto Merge(BufferPoolManager *bpm, page_id_t prev_page_id, page_id_t next_page_id) -> KeyType;
+  auto FetchFromPrev(BufferPoolManager *bpm, page_id_t prev_page_id) -> std::optional<std::pair<KeyType, KeyType>>;
+  auto FetchFromNext(BufferPoolManager *bpm, page_id_t next_page_id) -> std::optional<std::pair<KeyType, KeyType>>;
 
   /**
    * @brief for test only return a string representing all keys in
