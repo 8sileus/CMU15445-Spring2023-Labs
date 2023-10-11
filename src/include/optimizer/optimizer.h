@@ -107,6 +107,9 @@ class Optimizer {
   const Catalog &catalog_;
 
   const bool force_starter_rule_;
+
+  // my optimizer
+  auto OptimizerTooJoins(const AbstractPlanNodeRef &plan) -> AbstractPlanNodeRef;
 };
 
 }  // namespace bustub

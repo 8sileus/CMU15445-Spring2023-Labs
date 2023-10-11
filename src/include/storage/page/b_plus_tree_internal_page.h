@@ -12,6 +12,7 @@
 
 #include <queue>
 #include <string>
+#include <utility>
 
 #include "storage/page/b_plus_tree_page.h"
 
