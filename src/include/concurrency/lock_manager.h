@@ -65,7 +65,7 @@ class LockManager {
   class LockRequestQueue {
    public:
     /** List of lock requests for the same resource (table or row) */
-    std::list<LockRequest *> request_queue_;
+    std::list<std::shared_ptr<LockRequest>> request_queue_;
     /** For notifying blocked transactions on this rid */
     std::condition_variable cv_;
     /** txn_id of an upgrading transaction (if any) */
@@ -312,6 +312,13 @@ class LockManager {
  private:
   /** Spring 2023 */
   /* You are allowed to modify all functions below. */
+  auto CanGrantLock(const std::shared_ptr<LockRequest> &lock_request,
+                    const std::shared_ptr<LockRequestQueue> &lock_request_queue) -> bool;
+  void InsertTableLockSet(Transaction *txn, const std ::shared_ptr<LockRequest> &lock_request);
+  void DeleteTableLockSet(Transaction *txn, const std ::shared_ptr<LockRequest> &lock_request);
+  void InsertRowLockSet(Transaction *txn, const std ::shared_ptr<LockRequest> &lock_request);
+  void DeleteRowLockSet(Transaction *txn, const std ::shared_ptr<LockRequest> &lock_request);
+
   auto UpgradeLockTable(Transaction *txn, LockMode lock_mode, const table_oid_t &oid) -> bool;
   auto UpgradeLockRow(Transaction *txn, LockMode lock_mode, const table_oid_t &oid, const RID &rid) -> bool;
   auto AreLocksCompatible(LockMode l1, LockMode l2) -> bool;
