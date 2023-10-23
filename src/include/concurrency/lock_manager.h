@@ -17,6 +17,7 @@
 #include <list>
 #include <memory>
 #include <mutex>  // NOLINT
+#include <set>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -345,6 +346,10 @@ class LockManager {
   /** Waits-for graph representation. */
   std::unordered_map<txn_id_t, std::vector<txn_id_t>> waits_for_;
   std::mutex waits_for_latch_;
+  std::set<txn_id_t> txn_set_;
+
+  std::unordered_set<txn_id_t> visited_txn_ids_;
+  std::unordered_set<txn_id_t> visiting_txn_ids_;
 };
 
 }  // namespace bustub

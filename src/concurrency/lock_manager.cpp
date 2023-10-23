@@ -9,7 +9,6 @@
 // Copyright (c) 2015-2019, Carnegie Mellon University Database Group
 //
 //===----------------------------------------------------------------------===//
-
 #include "concurrency/lock_manager.h"
 
 #include "common/config.h"
@@ -326,26 +325,124 @@ auto LockManager::UnlockRow(Transaction *txn, const table_oid_t &oid, const RID 
   throw bustub::TransactionAbortException(txn->GetTransactionId(), AbortReason::ATTEMPTED_UNLOCK_BUT_NO_LOCK_HELD);
 }
 
-void LockManager::UnlockAll() {
-  // You probably want to unlock all table and txn locks here.
+void LockManager::AddEdge(txn_id_t t1, txn_id_t t2) {
+  txn_set_.insert(t1);
+  txn_set_.insert(t2);
+  waits_for_[t1].push_back(t2);
 }
 
-void LockManager::AddEdge(txn_id_t t1, txn_id_t t2) {}
+void LockManager::RemoveEdge(txn_id_t t1, txn_id_t t2) {
+  if (auto it = std::find(waits_for_[t1].begin(), waits_for_[t1].end(), t2); it != waits_for_[t1].end()) {
+    waits_for_[t1].erase(it);
+  }
+}
 
-void LockManager::RemoveEdge(txn_id_t t1, txn_id_t t2) {}
+auto LockManager::HasCycle(txn_id_t *txn_id) -> bool {
+  std::function<bool(txn_id_t)> dfs = [&](txn_id_t cur_txn_id) -> bool {
+    if (this->visited_txn_ids_.find(cur_txn_id) != this->visited_txn_ids_.end()) {
+      return false;
+    }
+    if (this->visiting_txn_ids_.find(cur_txn_id)!=this->visiting_txn_ids_.end()) {
+      return true;
+    }
+    this->visiting_txn_ids_.insert(cur_txn_id);
+    for (auto next_txn_id : this->waits_for_[cur_txn_id]) {
+      if (dfs(next_txn_id)) {
+        return true;
+      }
+    }
+    this->visiting_txn_ids_.erase(cur_txn_id);
+    this->visited_txn_ids_.insert(cur_txn_id);
+    return false;
+  };
 
-auto LockManager::HasCycle(txn_id_t *txn_id) -> bool { return false; }
+  for (const auto &cur_txn_id : txn_set_) {
+    if (dfs(cur_txn_id)) {
+      *txn_id = *visiting_txn_ids_.begin();
+      for (const auto &visiting_txn_id : visiting_txn_ids_) {
+        *txn_id = std::max(*txn_id, visiting_txn_id);
+      }
+      visiting_txn_ids_.clear();
+      return true;
+    }
+    BUSTUB_ASSERT(visiting_txn_ids_.empty(), "why visiting_txn_ids_ is not empty");
+  }
+  return false;
+}
 
 auto LockManager::GetEdgeList() -> std::vector<std::pair<txn_id_t, txn_id_t>> {
+  std::lock_guard lock(waits_for_latch_);
   std::vector<std::pair<txn_id_t, txn_id_t>> edges(0);
+  for (const auto &[t1, t2s] : waits_for_) {
+    for (const auto &t2 : t2s) {
+      edges.emplace_back(t1, t2);
+    }
+  }
   return edges;
 }
 
 void LockManager::RunCycleDetection() {
+  std::unordered_map<txn_id_t, RID> txn_rid_map;
+  std::unordered_map<txn_id_t, table_oid_t> txn_oid_map;
   while (enable_cycle_detection_) {
     std::this_thread::sleep_for(cycle_detection_interval);
-    {  // TODO(students): detect deadlock
+    {
+      std::scoped_lock lock(table_lock_map_latch_, row_lock_map_latch_);
+      for (const auto &[_, lock_queue] : table_lock_map_) {
+        std::lock_guard lock(lock_queue->latch_);
+        std::set<txn_id_t> granted_txn_ids;
+        for (const auto &lock_request : lock_queue->request_queue_) {
+          if (lock_request->granted_) {
+            granted_txn_ids.insert(lock_request->txn_id_);
+          } else {
+            for (const auto &txn_id : granted_txn_ids) {
+              txn_oid_map.emplace(lock_request->txn_id_, lock_request->oid_);
+              AddEdge(lock_request->txn_id_, txn_id);
+            }
+          }
+        }
+      }
+      for (const auto &[_, lock_queue] : row_lock_map_) {
+        std::lock_guard lock(lock_queue->latch_);
+        std::set<txn_id_t> granted_txn_ids;
+        for (const auto &lock_request : lock_queue->request_queue_) {
+          if (lock_request->granted_) {
+            granted_txn_ids.insert(lock_request->txn_id_);
+          } else {
+            for (const auto &txn_id : granted_txn_ids) {
+              txn_rid_map.emplace(lock_request->txn_id_, lock_request->rid_);
+              AddEdge(lock_request->txn_id_, txn_id); 
+            }
+          }
+        }
+      }
     }
+    txn_id_t txn_id;
+    while (HasCycle(&txn_id)) {
+      auto txn = txn_manager_->GetTransaction(txn_id);
+      txn->SetState(TransactionState::ABORTED);
+
+      waits_for_.erase(txn_id);
+      for (const auto &cur_txn_id : txn_set_) {
+        if (cur_txn_id != txn_id) {
+          RemoveEdge(cur_txn_id, txn_id);
+        }
+      }
+
+      if (txn_oid_map.find(txn_id) != txn_oid_map.end()) {
+        std::lock_guard lock(table_lock_map_[txn_oid_map[txn_id]]->latch_);
+        table_lock_map_[txn_oid_map[txn_id]]->cv_.notify_all();
+      }
+
+      if (txn_rid_map.find(txn_id) != txn_rid_map.end()) {
+        std::lock_guard lock(row_lock_map_[txn_rid_map[txn_id]]->latch_);
+        row_lock_map_[txn_rid_map[txn_id]]->cv_.notify_all();
+      }
+    }
+    txn_rid_map.clear();
+    txn_oid_map.clear();
+    visiting_txn_ids_.clear();
+    visited_txn_ids_.clear();
   }
 }
 
@@ -370,10 +467,10 @@ auto LockManager::CanGrantLock(const std::shared_ptr<LockRequest> &lock_request,
           break;
         case LockMode::INTENTION_EXCLUSIVE:
           if (request->lock_mode_ == LockMode::SHARED || request->lock_mode_ == LockMode::SHARED_INTENTION_EXCLUSIVE ||
-              request->lock_mode_ == LockMode::EXCLUSIVE){
+              request->lock_mode_ == LockMode::EXCLUSIVE) {
             return false;
           }
-            break;
+          break;
         case LockMode::SHARED_INTENTION_EXCLUSIVE:
           if (request->lock_mode_ != LockMode::INTENTION_EXCLUSIVE) {
             return false;
@@ -456,5 +553,7 @@ void LockManager::DeleteRowLockSet(Transaction *txn, const std ::shared_ptr<Lock
       break;
   }
 }
+
+void LockManager::UnlockAll() {}
 
 }  // namespace bustub
