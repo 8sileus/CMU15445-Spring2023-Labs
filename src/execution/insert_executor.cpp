@@ -24,6 +24,14 @@ void InsertExecutor::Init() {
   child_executor_->Init();
   table_info_ = exec_ctx_->GetCatalog()->GetTable(plan_->TableOid());
   index_infos_ = exec_ctx_->GetCatalog()->GetTableIndexes(table_info_->name_);
+  try {
+    if (!exec_ctx_->GetLockManager()->LockTable(exec_ctx_->GetTransaction(), LockManager::LockMode::INTENTION_EXCLUSIVE,
+                                                table_info_->oid_)) {
+      throw ExecutionException("Lock Table FAILED");
+    }
+  } catch (TransactionAbortException &e) {
+    throw ExecutionException("[Insert Executor]: ");
+  }
 }
 
 auto InsertExecutor::Next(Tuple *tuple, RID *rid) -> bool {
@@ -38,9 +46,14 @@ auto InsertExecutor::Next(Tuple *tuple, RID *rid) -> bool {
     if (!tuple_rid.has_value()) {
       continue;
     }
+    auto record = TableWriteRecord(table_info_->oid_, tuple_rid.value(), table_info_->table_.get());
+    record.wtype_ = WType::INSERT;
+    exec_ctx_->GetTransaction()->AppendTableWriteRecord(record);
     for (auto &index_info : index_infos_) {
       auto key = tuple->KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs());
       index_info->index_->InsertEntry(key, tuple_rid.value(), exec_ctx_->GetTransaction());
+      exec_ctx_->GetTransaction()->AppendIndexWriteRecord(IndexWriteRecord(
+          tuple_rid.value(), table_info_->oid_, WType::INSERT, key, index_info->index_oid_, exec_ctx_->GetCatalog()));
     }
     ++count;
   }

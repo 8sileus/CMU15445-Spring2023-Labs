@@ -221,13 +221,16 @@ void TwoPLTest1() {
 
   auto *txn = txn_mgr.Begin();
   EXPECT_EQ(0, txn->GetTransactionId());
-
   bool res;
   res = lock_mgr.LockTable(txn, LockManager::LockMode::INTENTION_EXCLUSIVE, oid);
   EXPECT_TRUE(res);
+  std::cout << "1\n";
 
   res = lock_mgr.LockRow(txn, LockManager::LockMode::SHARED, oid, rid0);
+  std::cout << "2\n";
+
   EXPECT_TRUE(res);
+  std::cout << "3\n";
 
   CheckGrowing(txn);
   CheckTxnRowLockSize(txn, oid, 1, 0);

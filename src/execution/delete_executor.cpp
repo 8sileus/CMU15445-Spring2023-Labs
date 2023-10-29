@@ -34,9 +34,14 @@ auto DeleteExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   TupleMeta tuple_meta{.insert_txn_id_ = INVALID_TXN_ID, .delete_txn_id_ = INVALID_TXN_ID, .is_deleted_ = true};
   while (child_executor_->Next(tuple, rid)) {
     table_info_->table_->UpdateTupleMeta(tuple_meta, *rid);
+    auto record = TableWriteRecord(table_info_->oid_, *rid, table_info_->table_.get());
+    record.wtype_ = WType::DELETE;
+    exec_ctx_->GetTransaction()->AppendTableWriteRecord(record);
     for (auto &index_info : index_infos_) {
       auto key = tuple->KeyFromTuple(table_info_->schema_, index_info->key_schema_, index_info->index_->GetKeyAttrs());
       index_info->index_->DeleteEntry(key, *rid, exec_ctx_->GetTransaction());
+      exec_ctx_->GetTransaction()->AppendIndexWriteRecord(IndexWriteRecord(
+          *rid, table_info_->oid_, WType::DELETE, key, index_info->index_oid_, exec_ctx_->GetCatalog()));
     }
     ++count;
   }
